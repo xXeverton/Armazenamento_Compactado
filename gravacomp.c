@@ -1,181 +1,244 @@
-/* Nome_do_Aluno1 Matricula Turma */
-/* Nome_do_Aluno2 Matricula Turma */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "gravacomp.h"
 
-// Funções auxiliares
+// ------------------------------
+// Funções Auxiliares Gerais (usadas por gravacomp e mostracomp)
+// ------------------------------
 
-// Conta quantos campos existem no descritor
-int conta_campos(char *descritor) {
-    int campos = 0;
-    int i = 0;
-    while (descritor[i] != '\0') {
-        if (descritor[i] == 'i' || descritor[i] == 'u') {
-            campos++;
-            i += 1;
-        } else if (descritor[i] == 's') {
-            campos++;
-            i += 3; // s + dois dígitos
-        }
-    }
-    return campos;
+// Converte string numérica para inteiro (ex: "05" -> 5)
+int string_para_inteiro(char *s) {
+    int resultado = 0;
+    for (; *s; s++)
+        resultado = resultado * 10 + (*s - '0');
+    return resultado;
 }
 
-// Calcula quantos bytes são necessários para um unsigned int
-static int bytes_necessarios_unsigned(unsigned int valor) {
-    if (valor <= 0xFF) return 1;
-    if (valor <= 0xFFFF) return 2;
-    if (valor <= 0xFFFFFF) return 3;
+// Verifica se é o último campo da estrutura a partir do header
+int campo_final(unsigned char cabecalho) {
+    return (cabecalho & 0x80) == 0x80;  // Bit 7 indica último campo
+}
+
+// Retorna o tipo do campo a partir do header
+char tipo_campo(unsigned char cabecalho) {
+    if ((cabecalho & 0x40) == 0x40) return 's'; // Bit 6: string
+    if ((cabecalho & 0x20) == 0x20) return 'i'; // Bit 5: int
+    return 'u'; // Caso nenhum dos bits acima: unsigned
+}
+
+// Extrai o tamanho em bytes do header (bits menos significativos)
+unsigned char tamanho_em_bytes(unsigned char cabecalho, char tipo) {
+    return cabecalho & (tipo == 's' ? 0x3F : 0x1F); // Máscara depende do tipo
+}
+
+// Verifica se o byte mais significativo indica número negativo (bit 7 = 1)
+int eh_negativo(unsigned char byte_mais_significativo) {
+    return (byte_mais_significativo & 0x80) == 0x80;
+}
+
+// ------------------------------
+// Funções Auxiliares usadas apenas em gravacomp
+// ------------------------------
+
+// Calcula quantos bytes são necessários para representar um int com sinal
+unsigned char tamanho_signed(int numero) {
+    if (numero == 0) return 1;
+    if (numero >= 128 && numero <= 255) return 2;
+    if (numero >= 32768 && numero <= 65535) return 3;
+    if (numero >= 8388608) return 4;
+
+    int i = 31;
+    while (i-- && (numero & (1 << i)) != (1 << i));
+    if (i < 7) return 1;
+    if (i < 15) return 2;
+    if (i < 23) return 3;
     return 4;
 }
 
-// Calcula quantos bytes são necessários para um signed int
-static int bytes_necessarios_signed(int valor) {
-    if (valor >= -128 && valor <= 127) return 1;
-    if (valor >= -32768 && valor <= 32767) return 2;
-    if (valor >= -8388608 && valor <= 8388607) return 3;
-    return 4;
+// Calcula quantos bytes são necessários para representar um unsigned int
+unsigned char tamanho_unsigned(unsigned int numero) {
+    if (numero == 0) return 1;
+    int bytes = 0, i = 0;
+    for (int j = 0; j < 4; j++) {
+        if ((numero >> i) != 0) bytes++;
+        i += 8;
+    }
+    return bytes;
 }
 
-// Implementação da função gravacomp
-int gravacomp(int nstructs, void* valores, char* descritor, FILE* arquivo) {
-    unsigned char *ptr = (unsigned char*)valores; // ponteiro para percorrer structs
-    int i;
+// Cria o cabeçalho para um int ou unsigned int
+unsigned char montar_header_int(unsigned char eh_ultimo, unsigned char tamanho, int eh_signed) {
+    unsigned char header = tamanho;
+    if (eh_ultimo) header |= (1 << 7); // Define bit de último campo
+    if (eh_signed) header |= (1 << 5); // Define bit de tipo signed
+    return header;
+}
 
-    if (fputc((unsigned char)nstructs, arquivo) == EOF) {
-        return -1; // erro ao gravar
+// Cria o cabeçalho para uma string
+unsigned char montar_header_string(unsigned char eh_ultimo, unsigned char tamanho) {
+    unsigned char header = tamanho;
+    if (eh_ultimo) header |= (1 << 7); // Define bit de último campo
+    header |= (1 << 6); // Define bit de string
+    return header;
+}
+
+// Calcula padding para alinhamento de int/unsigned int (4 bytes)
+unsigned char calcular_padding(int posicao) {
+    int soma = 0;
+    while (posicao % 4 != 0) {
+        posicao++;
+        soma++;
     }
+    return soma;
+}
 
-    // Para cada struct
-    for (i = 0; i < nstructs; i++) {
-        int pos_descritor = 0;
-        int n_campos = conta_campos(descritor);
-        int campo_atual = 0;
+// Retorna a diferença de endereço (ajuda no cálculo de alinhamento)
+int posicao_byte(unsigned char *inicio, unsigned char *atual) {
+    return atual - inicio;
+}
 
-        // Para cada campo
-        while (descritor[pos_descritor] != '\0') {
-            char tipo = descritor[pos_descritor];
+// ------------------------------
+// Função gravacomp
+// ------------------------------
 
-            if (tipo == 'i') {
-                int valor;
-                memcpy(&valor, ptr, sizeof(int));
+int gravacomp(int nstructs, void *valores, char *descritor, FILE *arquivo) {
+    unsigned char byte_auxiliar;
+    unsigned char *ponteiro = (unsigned char *)valores; // Ponteiro para percorrer os bytes da struct
+    unsigned char *inicio = ponteiro; // Salva o início da struct
+    unsigned int valor_unsigned;
+    int valor_int;
+    char tamanho_str_str[3];
+    int tamanho_str;
+    unsigned char header;
+    unsigned char eh_ultimo = 0;
+    unsigned char tamanho;
+    int posicao;
 
-                int num_bytes = bytes_necessarios_signed(valor);
+    // Grava o número de structs no arquivo (1 byte)
+    if (fwrite(&nstructs, sizeof(unsigned char), 1, arquivo) != 1) return -1;
 
-                unsigned char header = 0;
-                if (campo_atual == n_campos - 1) header |= 0x80; // cont = 1 se último
-                header |= (1 << 5); // tipo = 01 (signed int)
-                header |= num_bytes; // tamanho
-
-                if (fputc(header, arquivo) == EOF) return -1;
-
-                // Correção: grava big endian
-                for (int k = 0; k < num_bytes; k++) {
-                    unsigned char byte = (valor >> (8 * (num_bytes - k - 1))) & 0xFF;
-                    if (fputc(byte, arquivo) == EOF) return -1;
-                }
-
-                ptr += sizeof(int);
-                pos_descritor += 1;
-                campo_atual += 1;
+    // Loop para cada struct
+    while (nstructs--) {
+        for (int i = 0; i < strlen(descritor); i++) {
+            // Verifica se é o último campo da struct
+            if (i == strlen(descritor) - 1 || (descritor[i] == 's' && strlen(descritor) - i == 3)) {
+                eh_ultimo = 1;
             }
-            
-            else if (tipo == 'u') {
-                unsigned int valor;
-                memcpy(&valor, ptr, sizeof(unsigned int));
 
-                int num_bytes = bytes_necessarios_unsigned(valor);
+            switch (descritor[i]) {
+                case 's': // Campo tipo string
+                    // Lê o tamanho da string a partir do descritor (ex: s05)
+                    tamanho_str_str[0] = descritor[i + 1];
+                    tamanho_str_str[1] = descritor[i + 2];
+                    tamanho_str_str[2] = '\0';
+                    tamanho_str = string_para_inteiro(tamanho_str_str);
 
-                unsigned char header = 0;
-                if (campo_atual == n_campos - 1) header |= 0x80; // cont = 1 se último
-                header |= (0 << 5); // tipo = 00 (unsigned int)
-                header |= num_bytes; // tamanho
+                    // Calcula tamanho real da string e monta o header
+                    tamanho = strlen((char *)ponteiro);
+                    header = montar_header_string(eh_ultimo, tamanho);
 
-                if (fputc(header, arquivo) == EOF) return -1;
+                    // Grava o header e a string no arquivo
+                    if (fwrite(&header, 1, 1, arquivo) != 1) return -1;
+                    if (fwrite(ponteiro, 1, tamanho, arquivo) != tamanho) return -1;
 
-                // Correção: grava big endian
-                for (int k = 0; k < num_bytes; k++) {
-                    unsigned char byte = (valor >> (8 * (num_bytes - k - 1))) & 0xFF;
-                    if (fputc(byte, arquivo) == EOF) return -1;
-                }
+                    ponteiro += tamanho_str; // Avança no ponteiro o espaço da string
+                    i += 2; // Avança no descritor
+                    break;
 
-                ptr += sizeof(unsigned int);
-                pos_descritor += 1;
-                campo_atual += 1;
+                case 'i': // Campo tipo int
+                    posicao = posicao_byte(inicio, ponteiro);
+                    ponteiro += calcular_padding(posicao); // Alinha ponteiro
+
+                    valor_int = *((int *)ponteiro);
+                    tamanho = tamanho_signed(valor_int);
+                    header = montar_header_int(eh_ultimo, tamanho, 1);
+                    if (fwrite(&header, 1, 1, arquivo) != 1) return -1;
+
+                    // Grava os bytes do int em Big Endian
+                    for (int b = tamanho; b > 0; b--) {
+                        byte_auxiliar = (valor_int >> (8 * (b - 1))) & 0xFF;
+                        if (fwrite(&byte_auxiliar, 1, 1, arquivo) != 1) return -1;
+                    }
+                    ponteiro += sizeof(int);
+                    break;
+
+                case 'u': // Campo tipo unsigned int
+                    posicao = posicao_byte(inicio, ponteiro);
+                    ponteiro += calcular_padding(posicao);
+
+                    valor_unsigned = *((unsigned int *)ponteiro);
+                    tamanho = tamanho_unsigned(valor_unsigned);
+                    header = montar_header_int(eh_ultimo, tamanho, 0);
+                    if (fwrite(&header, 1, 1, arquivo) != 1) return -1;
+
+                    for (int b = tamanho; b > 0; b--) {
+                        byte_auxiliar = (valor_unsigned >> (8 * (b - 1))) & 0xFF;
+                        if (fwrite(&byte_auxiliar, 1, 1, arquivo) != 1) return -1;
+                    }
+                    ponteiro += sizeof(unsigned int);
+                    break;
             }
-            
-            else if (tipo == 's') {
-                int tamanho_str = (descritor[pos_descritor+1] - '0') * 10 + (descritor[pos_descritor+2] - '0');
-                char *str = (char*)ptr;
-
-                int len = strlen(str);
-                if (len > 63) len = 63; // Proteção extra
-
-                unsigned char header = 0;
-                if (campo_atual == n_campos - 1) header |= 0x80; // cont = 1 se último
-                header |= (1 << 6); // tipo = 1 para string
-                header |= len; // tamanho da string
-
-                if (fputc(header, arquivo) == EOF) return -1;
-
-                if (fwrite(str, 1, len, arquivo) != len) return -1;
-
-                ptr += tamanho_str;
-                pos_descritor += 3;
-                campo_atual += 1;
-            }
+            eh_ultimo = 0; // Reset para o próximo campo
         }
     }
-
     return 0;
 }
 
-// Implementação da função mostracomp
-void mostracomp(FILE *arquivo) {
-    int nstructs;
-    int i;
-    unsigned char header;
+// ------------------------------
+// Função mostracomp
+// ------------------------------
 
+void mostracomp(FILE *arquivo) {
+    char texto[64]; // Buffer para leitura de strings
+    int nstructs;
+    unsigned char cabecalho;
+    char tipo;
+    unsigned char num_bytes;
+    unsigned char bytes[4];
+    int numero = 0;
+
+    // Lê e imprime o número de structs
     nstructs = fgetc(arquivo);
     printf("Estruturas: %d\n\n", nstructs);
 
-    for (i = 0; i < nstructs; i++) {
+    while (nstructs--) {
         int ultimo = 0;
-
         while (!ultimo) {
-            header = fgetc(arquivo);
-            ultimo = (header & 0x80) != 0; // bit 7
+            cabecalho = fgetc(arquivo); // Lê o header
+            ultimo = campo_final(cabecalho);
+            tipo = tipo_campo(cabecalho);
+            num_bytes = tamanho_em_bytes(cabecalho, tipo);
 
-            if ((header & 0x40) != 0) {
-                // String
-                int tamanho = header & 0x3F;
-                char buffer[64];
-                fread(buffer, 1, tamanho, arquivo);
-                buffer[tamanho] = '\0';
-                printf("(str) %s\n", buffer);
-            }
-            else {
-                // Inteiro
-                int tipo = (header >> 5) & 0x03; // bits 6-5
-                int tamanho = header & 0x1F;     // bits 4-0
-                unsigned char bytes[4] = {0, 0, 0, 0};
+            numero = 0;
 
-                fread(bytes + (4 - tamanho), 1, tamanho, arquivo); // alinhar para big endian
+            switch (tipo) {
+                case 's':
+                    fread(texto, 1, num_bytes, arquivo); // Lê string
+                    texto[num_bytes] = '\0';
+                    printf("(str) %s\n", texto);
+                    break;
 
-                unsigned int valor_unsigned = (bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3];
-                int valor_signed = (int)valor_unsigned;
+                case 'i':
+                    fread(bytes, 1, num_bytes, arquivo); // Lê bytes
+                    for (int j = 0; j < num_bytes; j++) {
+                        numero = (numero << 8) | bytes[j]; // Reconstrói int
+                    }
+                    if (eh_negativo(bytes[0])) {
+                        numero |= (-1 << (8 * num_bytes)); // Ajusta sinal
+                    }
+                    printf("(int) %d (%08x)\n", numero, numero);
+                    break;
 
-                if (tipo == 0) {
-                    printf("(uns) %u (%08x)\n", valor_unsigned, valor_unsigned);
-                } else if (tipo == 1) {
-                    printf("(int) %d (%08x)\n", valor_signed, valor_unsigned);
-                }
+                case 'u':
+                    fread(bytes, 1, num_bytes, arquivo);
+                    for (int j = 0; j < num_bytes; j++) {
+                        numero = (numero << 8) | bytes[j]; // Reconstrói unsigned
+                    }
+                    printf("(uns) %u (%08x)\n", numero, numero);
+                    break;
             }
         }
-
-        printf("\n"); // linha em branco entre structs
+        printf("\n");
     }
 }
