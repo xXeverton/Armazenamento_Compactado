@@ -1,11 +1,5 @@
-relatorio.txt
--------------
-
-Alunos:
-- Nome: João da Silva - Matrícula: 202012345 - Turma: A
-- Nome: Maria Oliveira - Matrícula: 202012346 - Turma: A
-
-Descrição dos testes realizados:
+// Everton Pereria Militão - 2320462 3WA
+// Joana Moreira Flores - 2320924 3WA
 -------------------------------
 
 Foi utilizada a seguinte estrutura para os testes:
