@@ -1,56 +1,103 @@
-// Everton Pereria Militão - 2320462 3WA
-// Joana Moreira Flores - 2320924 3WA
--------------------------------
 
-Foi utilizada a seguinte estrutura para os testes:
+Everton Pereria Militão - 2320462 3WA
+Joana Moreira Flores - 2320924 3WA
 
-    struct exemplo {
-        int i;
-        char nome[5];
-        unsigned int u;
-    };
+Relatório de Testes – Biblioteca gravacomp
+------------------------------------------
 
-Foram testadas duas instâncias dessa struct com os seguintes dados:
+Estruturas utilizadas:
+----------------------
 
-    dados[0] = { -1, "abc", 258 }
-    dados[1] = {  1, "ABCD", 65535 }
+Foram criadas cinco diferentes structs para testar diversos cenários de uso da biblioteca, incluindo:
 
-A função `gravacomp` foi chamada com:
+- Combinações de inteiros com sinal (int), sem sinal (unsigned int) e strings;
+- Strings com diferentes tamanhos e múltiplas em sequência;
+- Casos com e sem padding;
+- Testes com alinhamento e verificação do bit de controle de fim de estrutura.
 
-    gravacomp(2, dados, "is05u", arquivo);
+Testes realizados:
+------------------
 
-E a função `mostracomp` foi utilizada para leitura e exibição.
+Teste 1 – is05s03u: struct com int, duas strings, unsigned int
+Teste 2 – is08u: struct com int, string, unsigned int
+Teste 2 (extra) – is08s03u: struct com int, duas strings, unsigned int
+Teste 3 – s05is12s06u: struct com string, int, string, string, unsigned int
+Teste 4 – iiii: struct com quatro int
+Teste 5 – is05s03: struct com int e duas strings
 
-O que está funcionando:
+Structs utilizadas:
+-------------------
+
+Struct com dois campos de string e um campo de cada tipo numérico
+struct teste1 {
+    int  i1;
+    char s1[5];
+    char s2[3];
+    unsigned int u1;
+} Teste1[2] = {
+    { -1, "abc", "f", 258 },
+    {  1, "ABCD", "kk", 65535 }
+};
+
+Struct com strings maiores e sem padding entre campos
+struct teste2 {
+    int  i1;
+    char s1[8];
+    char s2[3];
+    unsigned int u1;
+} Teste2[2] = {
+    { 0, "abc",  "ax",     0 },
+    { 1, "ABCD", "av", 65535 }
+};
+
+Struct complexa com várias strings, int e unsigned
+struct teste3 {
+    char s3[5];
+    int  i1;
+    char s1[12];
+    char s2[6];
+    unsigned int u1;
+} Teste3[3] = {
+    { "123x", 35,   "abcddddqw", "ax",   258 },
+    { "1224", 1,    "ABzxcCD",   "av", 65535 },
+    { "foda", 423,  "ABzxcCD",   "axsv", 7003 }
+};
+
+Struct com apenas inteiros
+struct teste4 {
+    int  i1;
+    int  i2;
+    int  i3;
+    int  i4;
+} Teste4[2] = {
+    { -354, 234, 111, -200 },
+    {    1,  34, -127,   24 }
+};
+
+Struct com int e duas strings pequenas
+struct teste5 {
+    int  i1;
+    char s1[5];
+    char s2[3];
+} Teste5[2] = {
+    { -23, "acb", "ab" },
+    {  42, "aaa", "bb" }
+};
+
+Resultados confirmados:
 ------------------------
 
-- Gravação e leitura de inteiros com sinal em big endian.
-- Gravação e leitura de inteiros sem sinal compactados com tamanho mínimo.
-- Gravação e leitura de strings de tamanho variável conforme descritor.
-- Detecção correta do último campo de cada struct (bit 7 do header).
-- Reconstrução correta dos inteiros com sinal (sinal negativo incluído).
-- Estruturas alinhadas corretamente em memória com padding respeitado.
+- Inteiros com sinal são gravados e lidos corretamente em big endian.
+- Inteiros sem sinal são compactados utilizando o menor número de bytes necessário.
+- Strings de tamanho fixo são manipuladas conforme o descritor.
+- O bit 7 do header marca corretamente o último campo da struct.
+- Estruturas com múltiplos campos são alinhadas corretamente em memória, com padding devidamente tratado.
+- Os dados foram lidos corretamente com mostracomp.
 
-O que não está funcionando:
-----------------------------
-
-- Todos os testes especificados foram concluídos com sucesso. Não foram encontrados problemas até o momento.
-
-Exemplo de saída obtida (após leitura do arquivo gerado):
-----------------------------------------------------------
-
-Estruturas: 2
-
-(int) -1 (ffffffff)
-(str) abc
-(uns) 258 (00000102)
-
-(int) 1 (00000001)
-(str) ABCD
-(uns) 65535 (0000ffff)
 
 Conclusão:
 ----------
 
-Todas as funcionalidades especificadas no enunciado foram implementadas com sucesso.
-O código foi amplamente testado com estruturas contendo campos variados e se comportou como esperado.
+Todos os testes funcionaram corretamente.
+Nenhum erro ou comportamento inesperado foi identificado.
+O código está de acordo com os requisitos do trabalho, com alinhamento, headers e leitura funcionando perfeitamente.
