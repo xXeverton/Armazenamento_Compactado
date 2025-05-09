@@ -1,0 +1,62 @@
+relatorio.txt
+-------------
+
+Alunos:
+- Nome: João da Silva - Matrícula: 202012345 - Turma: A
+- Nome: Maria Oliveira - Matrícula: 202012346 - Turma: A
+
+Descrição dos testes realizados:
+-------------------------------
+
+Foi utilizada a seguinte estrutura para os testes:
+
+    struct exemplo {
+        int i;
+        char nome[5];
+        unsigned int u;
+    };
+
+Foram testadas duas instâncias dessa struct com os seguintes dados:
+
+    dados[0] = { -1, "abc", 258 }
+    dados[1] = {  1, "ABCD", 65535 }
+
+A função `gravacomp` foi chamada com:
+
+    gravacomp(2, dados, "is05u", arquivo);
+
+E a função `mostracomp` foi utilizada para leitura e exibição.
+
+O que está funcionando:
+------------------------
+
+- Gravação e leitura de inteiros com sinal em big endian.
+- Gravação e leitura de inteiros sem sinal compactados com tamanho mínimo.
+- Gravação e leitura de strings de tamanho variável conforme descritor.
+- Detecção correta do último campo de cada struct (bit 7 do header).
+- Reconstrução correta dos inteiros com sinal (sinal negativo incluído).
+- Estruturas alinhadas corretamente em memória com padding respeitado.
+
+O que não está funcionando:
+----------------------------
+
+- Todos os testes especificados foram concluídos com sucesso. Não foram encontrados problemas até o momento.
+
+Exemplo de saída obtida (após leitura do arquivo gerado):
+----------------------------------------------------------
+
+Estruturas: 2
+
+(int) -1 (ffffffff)
+(str) abc
+(uns) 258 (00000102)
+
+(int) 1 (00000001)
+(str) ABCD
+(uns) 65535 (0000ffff)
+
+Conclusão:
+----------
+
+Todas as funcionalidades especificadas no enunciado foram implementadas com sucesso.
+O código foi amplamente testado com estruturas contendo campos variados e se comportou como esperado.
