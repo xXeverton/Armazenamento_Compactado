@@ -1,5 +1,5 @@
 // Everton Pereria Militão - 2320462 3WA
-// Joana Moreira Flores - matricula 3WA
+// Joana Moreira Flores - 2320924 3WA
 
 #include <stdio.h>
 #include <stdlib.h>
